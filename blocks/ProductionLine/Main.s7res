@@ -1,0 +1,18 @@
+﻿MultiLingualTexts:
+  - id: MLC_4CL
+    de-DE: '"Main Program Sweep (Cycle)"'
+  - id: MLC_33c
+    de-DE: Konnektierungsbaustein für PLC-Lab
+  - id: MLC_39K
+    de-DE: |+
+      #Deutsch (#English below)
+      Im Netzwerk 1 wird der Konnektierungsbaustein für PLC-Lab aufgerufen.
+      Dieser Aufruf darf nicht entfernt werden!
+
+      #English
+      The connection block for PLC-Lab is called up in network 1.
+      This call must not be removed!
+  - id: MLC_3w3
+    de-DE: Ihr Programm
+  - id: MLC_3EX
+    de-DE: Write your code starting here

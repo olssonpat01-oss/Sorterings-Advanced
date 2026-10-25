@@ -1,0 +1,21 @@
+﻿{
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "Stop - Nödstopp"
+    { S7_Language := "SCL" }
+    NETWORK
+        IF NOT "Emergency Stop Panel" THEN
+            "internalVariables".eStop := TRUE;
+        END_IF;
+        
+        IF "Emergency Stop Panel" AND "Start Button" THEN
+            "internalVariables".eStop := FALSE;
+            ;
+        END_IF;
+        
+        "internalVariables".resetALL := NOT "Stop Button";
+        
+    END_NETWORK
+END_FUNCTION_BLOCK

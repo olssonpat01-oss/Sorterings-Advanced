@@ -1,0 +1,206 @@
+﻿{
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "rawMaterialToBase"
+    VAR_OUTPUT
+        beltStart : Bool;
+    END_VAR
+    VAR
+        {
+            S7_Access := "ReadOnly := External";
+            S7_MLC := "MLC_4aV";
+            S7_Setpoint := "False";
+            S7_Visibility := "Hidden := External"
+        }
+        rawMatsTriggers : Array[0..99] of F_TRIG;
+        { S7_Setpoint := "True" }
+        pausedLast : Bool;
+        svEntrance : Bool;
+        { S7_Setpoint := "False" }
+        writeTrig : R_TRIG;
+        { S7_Setpoint := "True" }
+        writePending : Bool;
+        rawPending : Bool;
+        pausedPrev : Bool;
+        { S7_Setpoint := "False" }
+        hangTimer : TON_TIME;
+        hangTrig : R_TRIG;
+        { S7_Setpoint := "True" }
+        hangRUN : Bool;
+        { S7_Setpoint := "False" }
+        hangRunTimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        doorSTOP : Bool;
+    END_VAR
+
+    { S7_Language := "SCL" }
+    NETWORK
+        
+        IF "internalVariables".resetALL THEN
+            "Entrance belt" := FALSE;
+            "Machining Center (Start)" := FALSE;
+            "Exit Belt Sorter 1" := FALSE;
+            "Sorter 1 Forward and Power" := FALSE;
+            #beltStart := FALSE;
+            "Machining Center  (Progress)" := 0;
+            #writePending := FALSE;
+            "internalVariables".paused := FALSE;
+            #rawPending := FALSE;
+            #pausedPrev := FALSE;
+            #svEntrance := FALSE;
+            #hangRUN := FALSE;
+            #hangRunTimer(IN := FALSE,
+                          PT := T#1500ms);
+            "internalVariables".BlueLidSel := FALSE;
+            RETURN;
+        END_IF;
+        
+        //Stopp från dörr 1-6
+        #doorSTOP := NOT "Safety Door 1" OR NOT "Safety Door 2" OR NOT "Safety Door 3"
+        OR NOT "Safety Door 4" OR NOT "Safety Door 5" OR NOT "Safety Door 6";
+        
+        // Nödstopp (globalt eller dörr): frys utgångarna, behåll all status
+        IF "internalVariables".eStop OR #doorSTOP THEN
+            #writeTrig(CLK := "Write Sensor");
+            IF #writeTrig.Q THEN
+                #writePending := TRUE;
+            END_IF;
+            
+            "Entrance belt" := FALSE;
+            "Exit Belt Sorter 1" := FALSE;
+            "Sorter 1 Forward and Power" := FALSE;
+            "Machining Center (Start)" := FALSE;
+            RETURN;
+        END_IF;
+        
+        // Körs alltid så att ingen flank missas
+        #writeTrig(CLK := "Write Sensor");
+        IF #writeTrig.Q THEN
+            #writePending := TRUE;
+        END_IF;
+        IF "Blue Base Camera" THEN
+            "internalVariables".BlueBaseSel := TRUE;
+        END_IF;
+        IF "Blue Lid Camera" THEN
+            "internalVariables".BlueLidSel := TRUE;
+        END_IF;
+        IF "Green Base Camera" THEN
+            "internalVariables".GreenBaseSel := TRUE;
+        END_IF;
+        IF "Green Lid Camera" THEN
+            "internalVariables".GreenLidSel := TRUE;
+        END_IF;
+        
+        // Lås pausen: sätts av sensorn, släpps med Start Button
+        IF "Start Button"
+            OR (NOT "Blue Lid Conv Roller Sensor" AND NOT "Green Lid Conv Roller Sensor") THEN
+            "internalVariables".paused := FALSE;
+        END_IF;
+        IF "Blue Lid Conv Roller Sensor" OR "Green Lid Conv Roller Sensor"
+            OR "internalVariables".storageFULL THEN
+            "internalVariables".paused := TRUE;
+        END_IF;
+        
+        IF "internalVariables".paused AND NOT #pausedPrev THEN
+            #svEntrance := "Entrance belt";          // spara när pausen börjar
+        END_IF;
+        IF NOT "internalVariables".paused AND #pausedPrev THEN
+            "Entrance belt" := #svEntrance;          // återställ när pausen slutar
+        END_IF;
+        #pausedPrev := "internalVariables".paused;
+        
+        #beltStart := "Start Button" OR "Entrance belt"; // conveyor start function
+        
+        IF #beltStart AND NOT "internalVariables".paused THEN
+            "Entrance belt" := TRUE;
+        END_IF;
+        
+        #rawMatsTriggers[1](CLK := "Stop Entrance Belt Sensor"); // F_Trig for entrance belt sensor
+        
+        IF #rawMatsTriggers[1].Q THEN
+            "Entrance belt" := FALSE;
+            #svEntrance := FALSE;
+            #rawPending := TRUE;
+            #hangRUN := FALSE;
+        END_IF;
+        
+        IF #rawPending AND NOT "Machining Center  (Is Busy)" THEN
+            "Machining Center (Start)" := TRUE;
+            #rawPending := FALSE;
+        END_IF;
+        
+        IF "Machining Center  (Is Busy)" THEN
+            "Machining Center (Start)" := FALSE;
+        END_IF;
+        
+        // Maskincentret står öppet utan att bearbeta och ett råblock väntar: kör in det en kort stund
+        #hangTimer(IN := "Machining Center  (Opened)"
+                   AND "Machining Center  (Progress)" = 0
+                   AND #rawPending
+                   AND NOT "internalVariables".paused,
+                   PT := T#3s);
+        
+        #hangTrig(CLK := #hangTimer.Q);
+        IF #hangTrig.Q THEN
+            #hangRUN := TRUE;
+        END_IF;
+        
+        #hangRunTimer(IN := #hangRUN,
+                      PT := T#1500ms);
+        
+        // Avbryt pulsen när bearbetningen startat eller maskincentret stängt
+        IF #hangRUN AND ("Machining Center  (Progress)" > 0 OR NOT "Machining Center  (Opened)") THEN
+            #hangRUN := FALSE;
+            "Entrance belt" := FALSE;
+        END_IF;
+        
+        IF #hangRUN THEN
+            "Entrance belt" := TRUE;
+        END_IF;
+        
+        IF #hangRunTimer.Q THEN
+            "Entrance belt" := FALSE;
+            #hangRUN := FALSE;
+            #rawPending := FALSE;       // blocket är inkört
+        END_IF;
+        
+        // Som originalet: inmatningsbandet startar bara medan Write Sensor är sann
+        IF "Write Sensor" AND NOT "internalVariables".paused THEN
+            "Entrance belt" := TRUE;
+        END_IF;
+        
+        // Utgångsbandet startar på sparat objekt, men inte under paus
+        IF #writePending AND NOT "internalVariables".paused THEN
+            "Exit Belt Sorter 1" := TRUE;
+        END_IF;
+        
+        // Vid read sensor: stoppa utgångsbandet och starta Forward and Power
+        IF "Read Sensor Sorter 1" AND "Exit Belt Sorter 1" AND NOT "internalVariables".paused THEN
+            "Exit Belt Sorter 1" := FALSE;
+            "Sorter 1 Forward and Power" := TRUE;
+            #writePending := FALSE;
+        END_IF;
+        
+        // Ett råblock väntar på maskincentret: inga fler block får matas in
+        IF #rawPending AND NOT #hangRUN THEN
+            "Entrance belt" := FALSE;
+        END_IF;
+        
+        // Ett råblock väntar på maskincentret: inga fler block får matas in
+        IF #rawPending AND NOT #hangRUN THEN
+            "Entrance belt" := FALSE;
+        END_IF;
+        
+        // Håll allt av under paus (sist i blocket, så det vinner)
+        IF "internalVariables".paused THEN
+            "Exit Belt Sorter 1" := FALSE;
+            "Sorter 1 Forward and Power" := FALSE;
+            "Entrance belt" := FALSE;
+        END_IF;
+        
+        
+        
+    END_NETWORK
+END_FUNCTION_BLOCK

@@ -1,0 +1,350 @@
+﻿{
+    S7_BlockTitle := "MLC_3br";
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "greenLidPath"
+    VAR_INPUT
+        ClampBLueTest : Bool;
+    END_VAR
+    VAR
+        { S7_Setpoint := "False" }
+        greenlidPositionerSensor : F_TRIG;
+        { S7_Setpoint := "True" }
+        "step" : Int := 0;
+        { S7_Setpoint := "False" }
+        greenlidTriggers : Array[0..10] of F_TRIG;
+        { S7_Setpoint := "False" }
+        runOnTimer : TON_TIME;
+        roller1stoptimer : TON_TIME;
+        stopdelaytimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        pausedLast : Bool;
+        sv_Exitbelt : Bool;
+        sv_Sortergreenlid : Bool;
+        sv_SorterFwd : Bool;
+        sv_belt1 : Bool;
+        sv_belt2 : Bool;
+        sv_roller1 : Bool;
+        sv_roller2 : Bool;
+        sv_roller3 : Bool;
+        sv_roller4 : Bool;
+        sv_roller5 : Bool;
+        svLoadConv : Bool;
+        craneStep : Int;
+        { S7_Setpoint := "False" }
+        craneTimer : TON_TIME;
+        liftTimer : TON_TIME;
+        moveTimer : TON_TIME;
+        unloadTimer : TON_TIME;
+        homeTimer : TON_TIME;
+        retractTimer : TON_TIME;
+        lowerTimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        nextPos : Int := 1;
+        useRight : Bool;
+        storageFull : Bool;
+        doorStop : Bool;
+    END_VAR
+
+    { S7_Language := "SCL" }
+    NETWORK
+        
+        
+        IF "internalVariables".resetALL THEN
+            "Sorter 1 Green Lid" := FALSE;
+            "Green Lid Belt 1" := FALSE;
+            "Green Lid Belt 2" := FALSE;
+            "Green Lid Positioner (Clamp)" := FALSE;
+            "Green Lid Grab" := FALSE;
+            "Green Lid X Set Point" := 0;
+            "Green Lid Z Set point" := 0;
+            "Green Lid Roller 1" := FALSE;
+            "Green Lid Roller 2" := FALSE;
+            "Green Lid Roller 3" := FALSE;
+            "Green Lid Roller 4" := FALSE;
+            "Green Lid Roller 5" := FALSE;
+            #craneStep := 0;
+            #pausedLast := FALSE;
+            #step := 0;
+            "Stacker Crane Green Lid (Left)" := FALSE;
+            "Stacker Crane Green Lid (Right)" := FALSE;
+            "Stacker Crane Green Lid Lift" := FALSE;
+            "Loading Conveyor Green Lid" := FALSE;
+            "Stacker Crane Green Lid Target Position" := 55;
+            #nextPos := 1;
+            #useRight := FALSE;
+            #storageFull := FALSE;
+            "internalVariables".storageFULL := FALSE;
+            RETURN;
+        END_IF;
+        
+        //Nödstopp
+        #doorStop := NOT "Safety Door 1";
+        
+        IF "internalVariables".eStop OR #doorStop THEN
+            "Green Lid Belt 1" := FALSE;
+            "Green Lid Belt 2" := FALSE;
+            "Green Lid Roller 1" := FALSE;
+            "Green Lid Roller 2" := FALSE;
+            "Green Lid Roller 3" := FALSE;
+            "Green Lid Roller 4" := FALSE;
+            "Green Lid Roller 5" := FALSE;
+            "Loading Conveyor Green Lid" := FALSE;
+            "Sorter 1 Green Lid" := FALSE;
+            "Stacker Crane Green Lid (Left)" := FALSE;
+            "Stacker Crane Green Lid (Right)" := FALSE;
+            "Exit Belt Sorter 1" := FALSE;
+            "Exit Belt Sorter 2" := FALSE;
+            "Sorter 2 Forward and Power" := FALSE;
+            RETURN;
+        END_IF;
+        
+        #roller1stoptimer(IN := (#step = 90) AND NOT "Green Lid Stop Roller Sensor",
+                          PT := T#2s);
+        #runOnTimer(IN := (#step = 90) AND NOT "Green Lid Stop Roller Sensor",
+                    PT := T#2500ms);
+        
+        #craneTimer(IN := (#craneStep = 1),
+                    PT := T#1s);
+        #liftTimer(IN := (#craneStep = 2),
+                 
+                   PT := T#1s);
+        #moveTimer(IN := (#craneStep = 3),
+                   PT := T#2s);
+        #unloadTimer(IN := (#craneStep = 4),
+                     PT := T#1s);
+        #lowerTimer(IN := (#craneStep = 5),
+                    PT := T#1s);
+        #retractTimer(IN := (#craneStep = 6),
+                      PT := T#1s);
+        #homeTimer(IN := (#craneStep = 7),
+                   PT := T#1s);
+        
+        CASE #craneStep OF
+            0:
+                IF "Stacker Crane Green Lid Loader Sensor" AND NOT #storageFull THEN
+                    "Loading Conveyor Green Lid" := FALSE;
+                    "Stacker Crane Green Lid (Right)" := TRUE;
+                    #craneStep := 1;
+                END_IF;
+            1:  // (Left) kör in pallen under lådan, vänta tills den är på plats
+                IF #craneTimer.Q THEN
+                    "Stacker Crane Green Lid Lift" := TRUE;
+                    "Stacker Crane Green Lid (Right)" := FALSE;
+                    #craneStep := 2;
+                END_IF;
+                
+            2:  // lyften kör, vänta tills den hunnit klart
+                IF #liftTimer.Q THEN
+                    #craneStep := 3;
+                END_IF;
+                
+            3:  // lyften uppe, kör till målpositionen
+                IF #moveTimer.Q THEN
+                    IF #useRight THEN
+                        "Stacker Crane Green Lid (Right)" := TRUE;
+                    ELSE
+                        "Stacker Crane Green Lid (Left)" := TRUE;
+                    END_IF;
+                    #craneStep := 4;
+                END_IF;
+                
+            4:  // vänta tills gaffeln är ute
+                IF #unloadTimer.Q THEN
+                    "Stacker Crane Green Lid Lift" := FALSE;         // sänk lyften, gaffeln står kvar ute
+                    #craneStep := 5;
+                END_IF;
+                
+            5:  // vänta tills lyften är nere
+                IF #lowerTimer.Q THEN
+                    "Stacker Crane Green Lid (Left)" := FALSE;
+                    "Stacker Crane Green Lid (Right)" := FALSE;
+                    #craneStep := 6;
+                END_IF;
+                
+            6:  // vänta tills gaffeln är inne
+                    IF #retractTimer.Q THEN
+                        IF #useRight THEN
+                            // Höger är klar: nästa plats, börja på vänster igen
+                            #useRight := FALSE;
+                            #nextPos := #nextPos + 1;
+                            IF #nextPos > 54 THEN
+                                #nextPos := 1;
+                                #storageFull := TRUE;
+                                "internalVariables".storageFULL := TRUE; // båda sidor fulla
+                            END_IF;
+                        ELSE
+                            // Vänster är klar: samma plats, nu höger sida
+                            #useRight := TRUE;
+                        END_IF;
+                        #craneStep := 7;
+                    END_IF;
+                
+            7: // vänta tills kranen är hemma
+                IF #homeTimer.Q THEN
+                    #craneStep := 0;
+               
+                END_IF;
+        END_CASE;
+        
+        // Hem när kranen inte levererar, annars nästa lagerplats
+        IF #craneStep >= 3 AND #craneStep <= 6 THEN
+            "Stacker Crane Green Lid Target Position" := #nextPos;
+        ELSE
+            "Stacker Crane Green Lid Target Position" := 55;
+        END_IF;
+        
+        IF "internalVariables".paused AND NOT #pausedLast THEN
+            #sv_Sortergreenlid := "Sorter 1 Green Lid";
+            #sv_belt1 := "Green Lid Belt 1";
+            #sv_belt2 := "Green Lid Belt 2";
+            #sv_roller1 := "Green Lid Roller 1";
+            
+            "Sorter 1 Green Lid" := FALSE;
+            "Green Lid Belt 1" := FALSE;
+            "Green Lid Belt 2" := FALSE;
+            "Green Lid Roller 1" := FALSE;
+            
+        ELSIF NOT "internalVariables".paused AND #pausedLast THEN
+            "Sorter 1 Green Lid" := #sv_Sortergreenlid;
+            "Green Lid Belt 1" := #sv_belt1;
+            "Green Lid Belt 2" := #sv_belt2;
+            "Green Lid Roller 1" := #sv_roller1;
+        END_IF;
+        #pausedLast := "internalVariables".paused;
+        
+        IF "internalVariables".paused THEN
+            IF "internalVariables".storageFULL THEN
+                "Green Lid Roller 5" := FALSE;
+                "Loading Conveyor Green Lid" := FALSE;
+            ELSE
+                "Green Lid Roller 5" := TRUE;             // fortsätter under vanlig paus
+                "Loading Conveyor Green Lid" := NOT "Stacker Crane Green Lid Loader Sensor";
+            END_IF;
+        END_IF;
+        
+        IF "Exit Belt Sorter 1" THEN
+            IF "internalVariables".GreenLidSel THEN
+                "Sorter 1 Green Lid" := TRUE;
+                "Green Lid Belt 1" := TRUE;
+                "Green Lid Belt 2" := TRUE;
+                "Sorter 1 Forward and Power" := TRUE;
+            ELSE
+                "Sorter 1 Green Lid" := FALSE;
+                "Green Lid Belt 1" := FALSE;
+                "Green Lid Belt 2" := FALSE;
+            END_IF;
+        END_IF;
+        
+        #greenlidTriggers[4](CLK := "Sensor Green Lid Path");
+        
+        IF #greenlidTriggers[4].Q THEN
+            "Exit Belt Sorter 1" := FALSE;
+            "Sorter 1 Green Lid" := FALSE;
+            "Sorter 1 Forward and Power" := FALSE;
+            "internalVariables".GreenLidSel := FALSE;
+        END_IF;
+        
+        #greenlidPositionerSensor(CLK := "Green Lid Positioner Sensor");
+        
+        IF #greenlidPositionerSensor.Q THEN
+            "Green Lid Belt 1" := FALSE;
+            "Green Lid Belt 2" := FALSE;
+            "Green Lid Positioner (Clamp)" := TRUE;
+        END_IF;
+        
+        
+        
+        CASE #step OF
+            0:  // vänta på att locket sitter i positioneraren
+                IF "Green Lid Positioner (Clamp Sensor)" THEN
+                    "Green Lid Positioner (Clamp)" := FALSE;
+                    "Green Lid X Set Point" := 24607;
+                    #step := 1;
+                END_IF;
+                
+            1:  // vänta tills X är framme, sänk Z
+                IF "Green Lid X Position Sensor" >= 24000 THEN
+                    "Green Lid Z Set point" := 25160;
+                    #step := 2;
+                END_IF;
+                
+            2:  // Z nere, grip
+                IF "Green Lid Z Position Sensor" >= 25000 THEN
+                    "Green Lid Grab" := TRUE;
+                    #step := 3;
+                END_IF;
+                
+            3:  // locket gripet, lyft Z
+                IF "Green Lid Grab Sensor" THEN
+                    "Green Lid Z Set point" := 0;
+                    #step := 4;
+                END_IF;
+                
+            4:  // Z uppe, kör X hem
+                IF "Green Lid Z Position Sensor" <= 500 THEN
+                    "Green Lid X Set Point" := 1000;
+                    #step := 5;
+                END_IF;
+                
+            5:
+                IF "Green Lid X Position Sensor" <= 1500 AND NOT "Green Lid Stop Roller Sensor" THEN
+                    "Green Lid Roller 1" := TRUE;
+                    #step := 60;
+                END_IF;
+            60:
+                IF "Green Lid Stop Roller Sensor" THEN
+                    "Green Lid Roller 1" := FALSE;
+                    "Green Lid Z Set point" := 27648;
+                    #step := 70;
+                END_IF;
+            70:
+                IF "Green Lid Z Position Sensor" > 27000 THEN
+                    "Green Lid Grab" := FALSE;
+                    "Green Lid Z Set point" := 0;
+                    #step := 80;
+                END_IF;
+            80:
+                IF "Green Lid Z Position Sensor" <= 500 AND NOT "internalVariables".paused THEN
+                    ;
+                  
+                  
+                    "Green Lid Roller 1" := TRUE;
+                    "Green Lid Roller 2" := TRUE;
+                    "Green Lid Roller 3" := TRUE;
+                    "Green Lid Roller 4" := TRUE;
+                    "Green Lid Roller 5" := TRUE;
+                    #step := 90;
+                END_IF;
+            90:
+                IF NOT "Green Lid Stop Roller Sensor" THEN
+                    "Green Lid Roller 1" := FALSE;
+                    IF #runOnTimer.Q THEN
+                        "Green Lid Roller 2" := FALSE;
+                        "Green Lid Roller 3" := FALSE;
+                        "Green Lid Roller 4" := FALSE;
+                        "Green Lid Roller 5" := FALSE;
+                        #step := 0;
+                        
+                    END_IF;
+                    
+                    ;
+                END_IF;
+                
+                
+        END_CASE;
+        
+        // Lastbandet följer Roller 5, men står still när en låda är vid kranen
+        IF NOT "Stacker Crane Green Lid Loader Sensor" THEN
+            "Loading Conveyor Green Lid" := "Green Lid Roller 5";
+        ELSE
+            "Loading Conveyor Green Lid" := FALSE;
+        END_IF;
+        
+        IF "Stacker Crane Green Lid Loader Sensor" THEN
+            "Green Lid Roller 5" := FALSE;
+        END_IF;
+    END_NETWORK
+END_FUNCTION_BLOCK

@@ -1,0 +1,399 @@
+﻿{
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "blueBasePath"
+    VAR_INPUT
+        ClampBLueTest : Bool;
+    END_VAR
+    VAR
+        { S7_Setpoint := "False" }
+        BluebasePositionerSensor : F_TRIG;
+        { S7_Setpoint := "True" }
+        "step" : Int := 0;
+        { S7_Setpoint := "False" }
+        BluebaseTriggers : Array[0..10] of F_TRIG;
+        { S7_Setpoint := "False" }
+        runOnTimer : TON_TIME;
+        roller1stoptimer : TON_TIME;
+        stopdelaytimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        pausedLast : Bool;
+        sv_Exitbelt : Bool;
+        sv_SorterBluebase : Bool;
+        sv_SorterFwd : Bool;
+        sv_belt1 : Bool;
+        sv_belt2 : Bool;
+        sv_roller1 : Bool;
+        sv_roller2 : Bool;
+        sv_roller3 : Bool;
+        sv_roller4 : Bool;
+        sv_roller5 : Bool;
+        svLoadConv : Bool;
+        craneStep : Int;
+        { S7_Setpoint := "False" }
+        craneTimer : TON_TIME;
+        liftTimer : TON_TIME;
+        moveTimer : TON_TIME;
+        unloadTimer : TON_TIME;
+        homeTimer : TON_TIME;
+        retractTimer : TON_TIME;
+        lowerTimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        nextPos : Int := 1;
+        useRight : Bool;
+        storageFull : Bool;
+        s2Step : Int;
+        { S7_Setpoint := "False" }
+        pathTrig : R_TRIG;
+        roller1OffTimer : TOF_TIME;
+        { S7_Setpoint := "False" }
+        roller1PulseTimer : TON_TIME;
+        { S7_Setpoint := "True" }
+        doorStop : Bool;
+        svbelt3 : Bool;
+    END_VAR
+
+    { S7_Language := "SCL" }
+    NETWORK
+        
+        IF "internalVariables".resetALL THEN
+            "Blue Base Belt 1" := FALSE;
+            "Blue Base Belt 2" := FALSE;
+            "Blue Base Belt 3" := FALSE;
+            "Blue Base  Positioner (Clamp)" := FALSE;
+            "Blue Base Grab" := FALSE;
+            "Blue Base X Set Point" := 0;
+            "Blue Base Z Set Point" := 0;
+            "Blue Base Roller 1" := FALSE;
+            "Blue Base Roller 2" := FALSE;
+            "Blue Base Roller 3" := FALSE;
+            "Blue Base Roller 4" := FALSE;
+            #craneStep := 0;
+            #pausedLast := FALSE;
+            #step := 0;
+            "Stacker Crane Blue Base (Left)" := FALSE;
+            "Stacker Crane Blue Base (Right)" := FALSE;
+            "Stacker Crane Blue Base Lift" := FALSE;
+            "Loading Conveyor Blue Base" := FALSE;
+            "Stacker Crane Blue Base Target Position" := 55;
+            #nextPos := 1;
+            #useRight := FALSE;
+            #storageFull := FALSE;
+            "internalVariables".storageFULL := FALSE;
+            #s2Step := 0;
+            #roller1PulseTimer(IN := FALSE,
+                               PT := T#300ms);
+            "Sorter 2 Blue Base" := FALSE;
+            "Sorter 2 Forward and Power" := FALSE;
+            "Exit Belt Sorter 2" := FALSE;
+            "internalVariables".BlueBaseSel := FALSE;
+            "internalVariables".BlueLidSel := FALSE;
+            "internalVariables".GreenBaseSel := FALSE;
+            "internalVariables".GreenLidSel := FALSE;
+            RETURN;
+        END_IF;
+        
+        //Nödstopp
+        #doorStop := NOT "Safety Door 3";
+        
+        IF "internalVariables".eStop OR #doorStop THEN
+            "Blue Base Belt 1" := FALSE;
+            "Blue Base Belt 2" := FALSE;
+            "Blue Base Belt 3" := FALSE;
+            "Blue Base Roller 1" := FALSE;
+            "Blue Base Roller 2" := FALSE;
+            "Blue Base Roller 3" := FALSE;
+            "Blue Base Roller 4" := FALSE;
+            "Loading Conveyor Blue Base" := FALSE;
+            "Sorter 2 Blue Base" := FALSE;
+            "Stacker Crane Blue Base (Left)" := FALSE;
+            "Stacker Crane Blue Base (Right)" := FALSE;
+            "Exit Belt Sorter 1" := FALSE;
+            "Exit Belt Sorter 2" := FALSE;
+            "Sorter 2 Forward and Power" := FALSE;
+            RETURN;
+        END_IF;
+        
+        #pathTrig(CLK := "Sensor Blue Base Path");
+        
+        // 2. Stegsekvens för sorteringen
+        CASE #s2Step OF
+            0:  // Väntar på att grönt val är gjort och lådan når Sorter 1
+                IF "Read Sensor Sorter 1" AND "internalVariables".BlueBaseSel THEN
+                    "Sorter 1 Forward and Power" := TRUE;
+                    "Exit Belt Sorter 2" := TRUE;
+                    #s2Step := 1;
+                END_IF;
+                
+            1:  // Lådan når Sorter 2 – sväng
+                IF "Read Sensor Sorter 2" AND "internalVariables".BlueBaseSel THEN
+                    "Exit Belt Sorter 2" := FALSE;
+                    "Sorter 2 Forward and Power" := TRUE;
+                    "Sorter 2 Blue Base" := TRUE;
+                    #s2Step := 2;
+                END_IF;
+                
+            2:  // Lådan har passerat avvikaren – återställ
+                IF #pathTrig.Q THEN
+                    "Sorter 2 Forward and Power" := FALSE;
+                    "Sorter 2 Blue Base" := FALSE;
+                    "Sorter 1 Forward and Power" := FALSE;
+                    "internalVariables".BlueBaseSel := FALSE;
+                    "Blue Base Belt 1" := TRUE;
+                    "Blue Base Belt 2" := TRUE;
+                    "Blue Base Belt 3" := TRUE;
+                    #s2Step := 0;
+                END_IF;
+        END_CASE;
+        
+        // 3. Återställ selekteringsflaggan när lådan skickats igenom
+        
+        #roller1OffTimer(IN := (#step = 90), PT := T#800ms);
+        #roller1stoptimer(IN := (#step = 90) AND NOT "Blue Base Stop Roller Sensor" AND NOT "internalVariables".paused,
+                          PT := T#1500ms);
+        #runOnTimer(IN := (#step = 90) AND NOT "Blue Base Stop Roller Sensor" AND NOT "internalVariables".paused,
+                    PT := T#1500ms);
+        
+        #craneTimer(IN := (#craneStep = 1),
+                    PT := T#1s);
+        #liftTimer(IN := (#craneStep = 2),
+                 
+                   PT := T#1s);
+        #moveTimer(IN := (#craneStep = 3),
+                   PT := T#2s);
+        #unloadTimer(IN := (#craneStep = 4),
+                     PT := T#1s);
+        #lowerTimer(IN := (#craneStep = 5),
+                    PT := T#1s);
+        #retractTimer(IN := (#craneStep = 6),
+                      PT := T#1s);
+        #homeTimer(IN := (#craneStep = 7),
+                   PT := T#1s);
+        
+        CASE #craneStep OF
+            0:
+                IF "Stacker Crane Blue Base Loader Sensor" AND NOT #storageFull THEN
+                    "Loading Conveyor Blue Base" := FALSE;
+                    "Stacker Crane Blue Base (Left)" := TRUE;
+                    #craneStep := 1;
+                END_IF;
+            1:  // (Left) kör in pallen under lådan, vänta tills den är på plats
+                IF #craneTimer.Q THEN
+                    "Stacker Crane Blue Base Lift" := TRUE;
+                    "Stacker Crane Blue Base (Left)" := FALSE;
+                    #craneStep := 2;
+                END_IF;
+                
+            2:  // lyften kör, vänta tills den hunnit klart
+                IF #liftTimer.Q THEN
+                    #craneStep := 3;
+                END_IF;
+                
+            3:  // lyften uppe, kör till målpositionen
+                IF #moveTimer.Q THEN
+                    IF #useRight THEN
+                        "Stacker Crane Blue Base (Right)" := TRUE;
+                    ELSE
+                        "Stacker Crane Blue Base (Left)" := TRUE;
+                    END_IF;
+                    #craneStep := 4;
+                END_IF;
+                
+            4:  // vänta tills gaffeln är ute
+                IF #unloadTimer.Q THEN
+                    "Stacker Crane Blue Base Lift" := FALSE;         // sänk lyften, gaffeln står kvar ute
+                    #craneStep := 5;
+                END_IF;
+                
+            5:  // vänta tills lyften är nere
+                IF #lowerTimer.Q THEN
+                    "Stacker Crane Blue Base (Left)" := FALSE;
+                    "Stacker Crane Blue Base (Right)" := FALSE;
+                    #craneStep := 6;
+                END_IF;
+                
+            6:  // vänta tills gaffeln är inne
+                    IF #retractTimer.Q THEN
+                        IF #useRight THEN
+                            // Höger är klar: nästa plats, börja på vänster igen
+                            #useRight := FALSE;
+                            #nextPos := #nextPos + 1;
+                            IF #nextPos > 54 THEN
+                                #nextPos := 1;
+                                #storageFull := TRUE;
+                                "internalVariables".storageFULL := TRUE; // båda sidor fulla
+                            END_IF;
+                        ELSE
+                            // Vänster är klar: samma plats, nu höger sida
+                            #useRight := TRUE;
+                        END_IF;
+                        #craneStep := 7;
+                    END_IF;
+                
+            7: // vänta tills kranen är hemma
+                IF #homeTimer.Q THEN
+                    #craneStep := 0;
+               
+                END_IF;
+        END_CASE;
+        
+        // Hem när kranen inte levererar, annars nästa lagerplats
+        IF #craneStep >= 3 AND #craneStep <= 6 THEN
+            "Stacker Crane Blue Base Target Position" := #nextPos;
+        ELSE
+            "Stacker Crane Blue Base Target Position" := 55;
+        END_IF;
+        
+        IF "internalVariables".paused AND NOT #pausedLast THEN
+            // Pausen börjar: spara och stäng av
+            #sv_SorterBluebase := "Sorter 2 Blue Base";
+            #sv_belt1 := "Blue Base Belt 1";
+            #sv_belt2 := "Blue Base Belt 2";
+            #svbelt3 := "Blue Base Belt 3";
+            
+            #sv_roller1 := "Blue Base Roller 1";
+            #sv_roller2 := "Blue Base Roller 2";
+            #sv_roller3 := "Blue Base Roller 3";
+            #sv_roller4 := "Blue Base Roller 4";
+            
+            "Sorter 2 Blue Base" := FALSE;
+            "Blue Base Belt 1" := FALSE;
+            "Blue Base Belt 2" := FALSE;
+            "Blue Base Belt 3" := FALSE;
+            "Blue Base Roller 1" := FALSE;
+            "Blue Base Roller 2" := FALSE;
+            "Blue Base Roller 3" := FALSE;
+            "Blue Base Roller 4" := FALSE;
+            
+        ELSIF NOT "internalVariables".paused AND #pausedLast THEN
+            // Pausen slutar: återställ
+            "Sorter 2 Blue Base" := #sv_SorterBluebase;
+            "Blue Base Belt 1" := #sv_belt1;
+            "Blue Base Belt 2" := #sv_belt2;
+            "Blue Base Belt 3" := #svbelt3;
+            "Blue Base Roller 1" := #sv_roller1;
+            "Blue Base Roller 2" := #sv_roller2;
+            "Blue Base Roller 3" := #sv_roller3;
+            "Blue Base Roller 4" := #sv_roller4;
+        END_IF;
+        
+        #pausedLast := "internalVariables".paused;
+        
+        IF "internalVariables".paused THEN
+            IF "internalVariables".storageFULL THEN
+                "Blue Base Roller 4" := FALSE;
+                "Loading Conveyor Blue Base" := FALSE;
+            ELSE
+                "Blue Base Roller 4" := TRUE;             // fortsätter under vanlig paus
+                "Loading Conveyor Blue Base" := NOT "Stacker Crane Blue Base Loader Sensor";
+            END_IF;
+        END_IF;
+        
+        #BluebasePositionerSensor(CLK := "Blue Base Positioner Sensor");
+        
+        IF #BluebasePositionerSensor.Q THEN
+            "Blue Base Belt 1" := FALSE;
+            "Blue Base Belt 2" := FALSE;
+            "Blue Base Belt 3" := FALSE;
+            "Blue Base  Positioner (Clamp)" := TRUE;
+        END_IF;
+        
+        #roller1PulseTimer(IN := (#step = 90) AND "Blue Base Roller 1",
+                           PT := T#300ms);
+        
+        IF #roller1PulseTimer.Q THEN
+            "Blue Base Roller 1" := FALSE;
+        END_IF;
+        
+        CASE #step OF
+            0:  // vänta på att locket sitter i positioneraren
+                IF "Blue Base Positioner (Clamp Sensor)" THEN
+                    "Blue Base  Positioner (Clamp)" := FALSE;
+                    "Blue Base X Set Point" := 27000;
+                    #step := 1;
+                END_IF;
+                
+            1:  // vänta tills X är framme, sänk Z
+                IF "Blue Base X Position Sensor" >= 26500 THEN
+                    "Blue Base Z Set Point" := 25160;
+                    #step := 2;
+                END_IF;
+                
+            2:  // Z nere, grip
+                IF "Blue Base Z Position Sensor" >= 25000 THEN
+                    "Blue Base Grab" := TRUE;
+                    #step := 3;
+                END_IF;
+                
+            3:  // locket gripet, lyft Z
+                IF "Blue Base Grab Sensor" THEN
+                    "Blue Base Z Set Point" := 0;
+                    #step := 4;
+                END_IF;
+                
+            4:  // Z uppe, kör X hem
+                IF "Blue Base Z Position Sensor" <= 500 THEN
+                    "Blue Base X Set Point" := 1000;
+                    #step := 5;
+                END_IF;
+                
+            5:
+                IF "Blue Base X Position Sensor" <= 1500 AND NOT "Blue Base Stop Roller Sensor" THEN
+                    "Blue Base Roller 1" := TRUE;
+                    #step := 60;
+                END_IF;
+            60:
+                IF "Blue Base Stop Roller Sensor" THEN
+                    "Blue Base Roller 1" := FALSE;
+                    "Blue Base Z Set Point" := 27648;
+                    #step := 70;
+                END_IF;
+            70:
+                IF "Blue Base Z Position Sensor" > 27000 THEN
+                    "Blue Base Grab" := FALSE;
+                    "Blue Base Z Set Point" := 0;
+                    #step := 80;
+                END_IF;
+            80:
+                // När armen gått upp helt: starta rullarna för att skicka iväg lådan
+                IF "Blue Base Z Position Sensor" <= 500 AND NOT "internalVariables".paused THEN
+                    "Blue Base Roller 1" := TRUE;
+                    "Blue Base Roller 2" := TRUE;
+                    "Blue Base Roller 3" := TRUE;
+                    "Blue Base Roller 4" := TRUE;
+                    #step := 90;
+                END_IF;
+                
+            90:
+                // Håll Roller 1 igång en kort stund så lådan lämnar Roller 1 helt, stäng sedan av Roller 1
+                IF NOT "Blue Base Stop Roller Sensor" THEN
+                    "Blue Base Roller 1" := FALSE;
+                END_IF;
+                
+                // När hela utmatningstimen för Roller 2-4 löpt ut: återställ sekvensen till steg 0
+                IF #runOnTimer.Q THEN
+                    "Blue Base Roller 1" := FALSE;
+                    "Blue Base Roller 2" := FALSE;
+                    "Blue Base Roller 3" := FALSE;
+                    "Blue Base Roller 4" := FALSE;
+                    #step := 0;
+                END_IF;
+               
+                
+                
+        END_CASE;
+        
+        // Lastbandet följer Roller 5, men står still när en låda är vid kranen
+        IF NOT "Stacker Crane Blue Base Loader Sensor" THEN
+            "Loading Conveyor Blue Base" := "Blue Base Roller 4";
+        ELSE
+            "Loading Conveyor Blue Base" := FALSE;
+        END_IF;
+        
+        IF "Stacker Crane Blue Base Loader Sensor" THEN
+            "Blue Base Roller 4" := FALSE;
+        END_IF;
+    END_NETWORK
+END_FUNCTION_BLOCK

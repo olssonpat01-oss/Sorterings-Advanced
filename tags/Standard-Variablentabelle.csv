@@ -1,0 +1,9 @@
+﻿Name;DataType;Address;Comment
+Sensor Blue Lid Path;Bool;%I8.2;
+Sensor Green Lid Path;Bool;%I8.3;
+Blue Lid X moving sensor;Bool;%I8.4;
+Blue lid Z moving sensor;Bool;%I8.5;
+Sensor Blue Base Path;Bool;%I9.0;
+Sensor Green Base Path;Bool;%I9.1;
+Blue base box emitter;Bool;%Q0.6;
+Green base box  emitter;Bool;%Q3.0;

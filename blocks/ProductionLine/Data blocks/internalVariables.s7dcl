@@ -1,0 +1,19 @@
+﻿{
+    S7_Optimized := "TRUE";
+    S7_StandardRetain := "FALSE";
+    S7_Version := "0.1"
+}
+DATA_BLOCK internalVariables
+    VAR
+        startSequence : Bool;
+        resetALL : Bool;
+        safetyChecksClear : Bool;
+        paused : Bool;
+        storageFULL : Bool;
+        BlueLidSel : Bool;
+        GreenBaseSel : Bool;
+        BlueBaseSel : Bool;
+        GreenLidSel : Bool;
+        eStop : Bool;
+    END_VAR
+END_DATA_BLOCK

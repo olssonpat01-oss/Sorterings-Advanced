@@ -1,0 +1,77 @@
+﻿{
+    S7_BlockTitle := "MLC_4CL";
+    S7_Optimized := "TRUE";
+    S7_PreferredLanguage := "LAD";
+    S7_Version := "0.1"
+}
+ORGANIZATION_BLOCK "Main"
+    {
+        S7_Language := "LAD";
+        S7_NetworkComment := "MLC_39K";
+        S7_NetworkTitle := "MLC_33c"
+    }
+    NETWORK
+        RUNG wire#powerrail
+            "MHJ-PLC-Lab-Function-S71200"()
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "Stop - Nödstopp_DB"()
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            I_Contact( "Stop Button" )
+            R_Coil( "internalVariables".startSequence )
+        END_RUNG
+    END_NETWORK
+    {
+        S7_Language := "LAD";
+        S7_NetworkComment := "MLC_3EX";
+        S7_NetworkTitle := "MLC_3w3"
+    }
+    NETWORK
+        RUNG wire#powerrail
+            Contact( "Start Button" )
+            S_Coil( "internalVariables".startSequence )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "rawMaterialToBase_DB"(beltStart =>  )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "blueLidPath_DB_1"( ClampBLueTest :=   )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "blueBasePath_DB"( ClampBLueTest :=   )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "greenLidPath_DB"( ClampBLueTest :=   )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+            "greenBasePath_DB"( ClampBLueTest :=   )
+        END_RUNG
+    END_NETWORK
+    { S7_Language := "LAD" }
+    NETWORK
+        RUNG wire#powerrail
+        END_RUNG
+    END_NETWORK
+END_ORGANIZATION_BLOCK
