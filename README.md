@@ -1,10 +1,53 @@
 # Sorteringsverk (Advanced)
 
-Ett komplett flöde från råmaterial till höglager, byggt i **Factory IO** och styrt med **Siemens S7-PLC** i **TIA Portal** via **PLCSIM**. Projektet gjordes under LIA 1.
+![TIA Portal V21](https://img.shields.io/badge/TIA%20Portal-V21-009999)
+![S7-1200](https://img.shields.io/badge/PLC-S7--1200-009999)
+![SCL](https://img.shields.io/badge/Spr%C3%A5k-SCL-0b5394)
+![Factory IO](https://img.shields.io/badge/Simulering-Factory%20IO%20%2B%20PLCSIM-e67e22)
+![Status](https://img.shields.io/badge/Status-Fungerar%20i%20simulering-2e7d32)
 
-Råa block bearbetas till lock (*lids*) eller bottnar (*bases*) i blått eller grönt. Kameror sorterar dem till fyra separata linjer. På varje linje lägger en pick & place-robot detaljen i en låda, och lådan körs till en staplarkran som lagrar in den i höglagret.
+**PLC-styrning av en hel produktionslina, från råmaterial till fullt höglager.**
+Råa block bearbetas till lock eller bottnar i blått eller grönt, sorteras med kameror till fyra linjer, packas i lådor av pick & place-robotar och lagras in av staplarkranar.
 
 ![Sorteringsverket i Factory IO](sorteringsverk.png)
+
+---
+
+## I korthet
+
+| | |
+|---|---|
+| **Vad** | Styrning av en komplett lina i Factory IO: bearbetning, sortering, pick & place och höglager |
+| **Plattform** | Siemens S7-1200 i TIA Portal V21, testat i S7-PLCSIM |
+| **Omfattning** | 7 programblock, 182 taggar, 4 parallella linjer, 4 staplarkranar, 216 lagerplatser per färg |
+| **Sammanhang** | Gjort under LIA 1, utbildningen till automationsingenjör (YH) |
+
+**Det här visar projektet:**
+
+- Stegsekvenser i SCL med CASE-satser för robotar, sorterare och kranar
+- Analog positionering (0–10 V) av tvåaxliga robotar med återkoppling från positionsgivare
+- Spårning av detaljtyp från kamera till sorterare med flera detaljer på linjen samtidigt
+- Nödstopp, säkerhetsdörrar och en paus som sparar och återställer alla utgångars läge
+- Felsökning av verkliga problem i simuleringen, se [Problem som löstes](#problem-som-löstes)
+
+---
+
+## Koden
+
+Klicka på ett block för att läsa koden direkt på GitHub.
+
+| Block | Vad det gör |
+|---|---|
+| [`rawMaterialToBase`](blocks/ProductionLine/rawMaterialToBase.s7dcl) | Inmatning, bearbetningscenter, hängningsskydd, kameror och paus |
+| [`blueLidPath`](blocks/ProductionLine/PalletPaths/Blue%20path/Lid/blueLidPath.s7dcl) | Sorter 1, pick & place, rullbana och staplarkran för blå lock |
+| [`blueBasePath`](blocks/ProductionLine/PalletPaths/Blue%20path/Base/blueBasePath.s7dcl) | Sorter 2 med egen sekvens, pick & place, rullbana och staplarkran för blå bottnar |
+| [`greenLidPath`](blocks/ProductionLine/PalletPaths/Green%20path/Lid/greenLidPath.s7dcl) | Som blå lock, med spegelvänd kran |
+| [`greenBasePath`](blocks/ProductionLine/PalletPaths/Green%20path/Base/greenBasePath.s7dcl) | Som blå bottnar, med spegelvänd kran |
+| [`Stop - Nödstopp`](blocks/ProductionLine/Stop%20-%20N%C3%B6dstopp.s7dcl) | Inlåsning och kvittering av nödstopp, reset via Stop-knappen |
+| [`internalVariables`](blocks/ProductionLine/Data%20blocks/internalVariables.s7dcl) | Gemensam DB: valflaggor från kamerorna, paus, nödstopp, reset, lagret fullt |
+| [`Main`](blocks/ProductionLine/Main.s7dcl) | Anropar alla block |
+
+Övrigt: [taggtabeller (I/O)](tags/) · [hårdvarukonfiguration](hardware.md)
 
 ---
 
@@ -88,22 +131,6 @@ Flanken från *Write Sensor* fångas även under nödstopp, så att ingen detalj
 
 ---
 
-## Programstruktur
-
-| Block | Innehåll |
-|---|---|
-| `Stop - Nödstopp` | Inlåsning och kvittering av nödstopp, reset via Stop-knappen |
-| `rawMaterialToBase` | Inmatning, bearbetningscenter, hängningsskydd, kameror, paus |
-| `blueLidPath` | Sorter 1, pick & place, rullbana, staplarkran |
-| `blueBasePath` | Sorter 2, pick & place, rullbana, staplarkran |
-| `greenLidPath` | Som blueLidPath, spegelvänd kran |
-| `greenBasePath` | Som blueBasePath, spegelvänd kran |
-| `internalVariables` (DB) | Valflaggor från kamerorna, paus, nödstopp, reset, lagret fullt |
-
-Varje station har sina sekvenser i CASE-satser: en för pick & place, en för kranen och, för Blue Base, en för sorteringen.
-
----
-
 ## Problem som löstes
 
 - **Bearbetningscentret hängde sig** med öppen lucka och blocket utanför. Löst med en tidsövervakning som ger inmatningsbandet en kort extra puls.
@@ -121,18 +148,16 @@ Varje station har sina sekvenser i CASE-satser: en för pick & place, en för kr
 
 ---
 
-## Filstruktur
-
-```
-blocks/      PLC-block som text (SIMATIC SD)
-tags/        Taggtabeller (CSV)
-hardware.md  Hårdvarukonfiguration
-```
-
 ## Verktyg
 
 - Factory IO 2.5.10 (Siemens Edition)
 - TIA Portal V21, SCL
 - S7-1200 (CPU 1211C) i S7-PLCSIM
+
+---
+
+## Om mig
+
+Jag studerar till automationsingenjör på Teknikhögskolan Linköping (YH, 2025–2027) och har fem års erfarenhet som operatör i livsmedelsindustrin. Jag söker sommarjobb, deltid eller anställning inom automation. Kontakta mig gärna via LinkedIn.
 
 > Endast testat i simulering. Eventuella `Test_*`-block som skriver till ingångar ska tas bort före nedladdning till en riktig PLC.
